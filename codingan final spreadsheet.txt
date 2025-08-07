@@ -1,0 +1,236 @@
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_TSL2591.h>
+#include <Stepper.h>
+
+Adafruit_TSL2591 tsl = Adafruit_TSL2591(2591);
+
+#define BLYNK_TEMPLATE_ID "TMPL616txSnT0"
+#define BLYNK_TEMPLATE_NAME "Tirai IoTCopy"
+#define BLYNK_AUTH_TOKEN "8T8sxeR-kXKBnpTStw74aBjIYuahepgs"
+
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+
+char auth[] = BLYNK_AUTH_TOKEN;
+char ssid[] = "eleh";
+char pass[] = "siapapunya";
+
+const char* host = "script.google.com";
+const int httpsPort = 443;
+//----------------------------------------
+
+WiFiClientSecure client; // Create a WiFiClientSecure object
+
+String GAS_ID = "AKfycbzyaw8_u_Cxzy29FXJkabA8rO7AsJH72mgAwIHAPQb7yjhvu7bfhoHp3155ayo1lPIrJA";
+
+#define IN1a D8
+#define IN2a D7
+#define IN3a D6
+#define IN4a D5
+#define LDR A0
+#define ROLLERTIME 2000
+#define ROLLING 100
+
+int delayTime = 2;
+bool Down_Roller;
+bool Up_Roller;
+bool autoMode;
+int yAxis = 512;
+int tiraiNaik = 0;
+int tiraiTurun = 0;
+int autoNaik = 0;
+int autoTurun = 0;
+
+
+BLYNK_WRITE(V0) {
+  Down_Roller = param.asInt();
+}
+
+BLYNK_WRITE(V1) {
+  Up_Roller = param.asInt();
+}
+
+BLYNK_WRITE(V2) {
+  autoMode = param.asInt();
+}
+
+BLYNK_WRITE(V4) {
+  yAxis = param[0].asInt();
+}
+
+void forwardMotor(void) {
+  digitalWrite(IN4a, HIGH);
+  digitalWrite(IN3a, LOW);
+  digitalWrite(IN2a, LOW);
+  digitalWrite(IN1a, LOW);
+  delay(delayTime);
+  digitalWrite(IN4a, LOW);
+  digitalWrite(IN3a, HIGH);
+  digitalWrite(IN2a, LOW);
+  digitalWrite(IN1a, LOW);
+  delay(delayTime);
+  digitalWrite(IN4a, LOW);
+  digitalWrite(IN3a, LOW);
+  digitalWrite(IN2a, HIGH);
+  digitalWrite(IN1a, LOW);
+  delay(delayTime);
+  digitalWrite(IN4a, LOW);
+  digitalWrite(IN3a, LOW);
+  digitalWrite(IN2a, LOW);
+  digitalWrite(IN1a, HIGH);
+}
+
+void backwardMotor(void) {
+  digitalWrite(IN4a, LOW);
+  digitalWrite(IN3a, LOW);
+  digitalWrite(IN2a, LOW);
+  digitalWrite(IN1a, HIGH);
+  delay(delayTime);
+  digitalWrite(IN4a, LOW);
+  digitalWrite(IN3a, LOW);
+  digitalWrite(IN2a, HIGH);
+  digitalWrite(IN1a, LOW);
+  delay(delayTime);
+  digitalWrite(IN4a, LOW);
+  digitalWrite(IN3a, HIGH);
+  digitalWrite(IN2a, LOW);
+  digitalWrite(IN1a, LOW);
+  delay(delayTime);
+  digitalWrite(IN4a, HIGH);
+  digitalWrite(IN3a, LOW);
+  digitalWrite(IN2a, LOW);
+  digitalWrite(IN1a, LOW);
+  delay(delayTime);
+}
+
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(IN1a, OUTPUT);
+  pinMode(IN2a, OUTPUT);
+  pinMode(IN3a, OUTPUT);
+  pinMode(IN4a, OUTPUT);
+  pinMode(LDR, INPUT);
+  Blynk.begin(auth, ssid, pass);
+  client.setInsecure();
+}
+
+void loop() {
+  Blynk.run();
+
+  int cahaya = analogRead(LDR);
+  cahaya = map(cahaya, 0, 1023, 100, 0);
+  Blynk.virtualWrite(V3, cahaya);
+
+  if (Down_Roller) {
+    if (autoTurun == 0 && tiraiTurun == 0) {
+      for (int steps = 0; steps < ROLLERTIME; steps++) {
+        backwardMotor();
+      }
+        autoTurun = 1;
+        autoNaik = 0;
+        tiraiTurun = 1;
+        tiraiNaik = 0;
+    }
+  }
+
+  if (Up_Roller) {
+    if (autoNaik == 0 && tiraiNaik == 0) {
+      for (int steps = 0; steps < ROLLERTIME; steps++) {
+        forwardMotor();
+      }
+      autoNaik = 1;
+      autoTurun = 0;
+      tiraiNaik = 1;
+      tiraiTurun = 0;
+    }
+  }
+
+  if (autoMode) { 
+    if (cahaya > 30 && cahaya < 80) {
+      if (autoTurun == 0 && tiraiTurun == 0) {
+        for (int steps = 0; steps < ROLLERTIME; steps++) {
+        backwardMotor();
+        }
+        autoTurun = 1;
+        autoNaik = 0;
+        tiraiTurun = 1;
+        tiraiNaik = 0;
+      }
+    } else if (cahaya > 80 || cahaya < 30) {
+      if (autoNaik == 0 && tiraiNaik == 0) {
+        for (int steps = 0; steps < ROLLERTIME; steps++) {
+        forwardMotor();
+        }
+        autoNaik = 1;
+        autoTurun = 0;
+        tiraiNaik = 1;
+        tiraiTurun = 0;
+      }
+    }
+  }
+
+if (yAxis) {
+      if (yAxis < 500) {
+        for (int steps = 0; steps < ROLLING; steps++) {
+        forwardMotor();
+        }
+      } else if (yAxis > 520) {
+        for (int steps = 0; steps < ROLLING; steps++) {
+        backwardMotor();
+        }
+      }
+    }
+
+  sendData(cahaya);
+  delay(1000);
+}
+
+  void sendData(int LDR) {
+  Serial.println("==========");
+  Serial.print("connecting to ");
+  Serial.println(host);
+
+  //----------------------------------------Connect to Google host
+  if (!client.connect(host, httpsPort)) {
+    Serial.println("connection failed");
+    return;
+  }
+  //----------------------------------------
+
+  //----------------------------------------Processing data and sending data
+  String string_ldr = String(LDR);
+  String url = "/macros/s/" + GAS_ID + "/exec?LDR=" + string_ldr; // Perbaikan: Sesuaikan parameter
+  Serial.print("requesting URL: ");
+  Serial.println(url);
+
+  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+               "Host: " + host + "\r\n" +
+               "User-Agent: BuildFailureDetectorESP8266\r\n" +
+               "Connection: close\r\n\r\n");
+
+  Serial.println("request sent");
+  //----------------------------------------
+
+  //----------------------------------------Checking whether the data was sent successfully or not
+  while (client.connected()) {
+    String line = client.readStringUntil('\n');
+    if (line == "\r") {
+      Serial.println("headers received");
+      break;
+    }
+  }
+  String line = client.readStringUntil('\n');
+  if (line.startsWith("{\"state\":\"success\"")) {
+    Serial.println("Data sent successfully!");
+  } else {
+    Serial.println("Failed to send data");
+  }
+  Serial.print("reply was : ");
+  Serial.println(line);
+  Serial.println("closing connection");
+  Serial.println("==========");
+  Serial.println();
+  //----------------------------------------
+}
